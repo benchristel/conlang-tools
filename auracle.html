@@ -1,0 +1,330 @@
+<html>
+    
+    <head>
+        <title>Mooble</title>
+        
+        <style type="text/css">
+            ol.lightup > li {
+                display: inline;
+                padding: 5px;
+                font-size: 20px;
+                color: #ddd;
+            }
+            
+            ol.lightup > li.lit {
+                color: #080;
+            }
+            
+            textarea {
+                font-size: 16px;
+            }
+            
+            .floating-container {
+                float: left;
+            }
+            
+            .wide {
+                width: 900px;
+            }
+            
+            .narrow {
+                width: 600px;
+            }
+        </style>
+        
+        <script type="text/javascript">
+            var ENGLISH_ALPHABET = "abcdefghijklmnopqrstuvwxyz".split('');
+            
+            Array.prototype.remove = function(value) {
+                var idx = this.indexOf(value);
+                if (idx != -1) {
+                    return this.splice(idx, 1); // The second parameter is the number of elements to remove.
+                }
+                return false;
+            }
+            
+            Array.prototype.contains = function(value) {
+                return this.indexOf(value) > -1;
+            }
+            
+            Array.prototype.unique = function() {
+                var unique = [];
+                for (var i = 0; i < this.length; i++) {
+                    if (unique.indexOf(this[i]) == -1) {
+                        unique.push(this[i]);
+                    }
+                }
+                return unique;
+            };
+            
+            Array.prototype.uniqSorted = function() {
+                var memo, unique = [];
+                for (var i = 0; i < this.length; i++) {
+                    if (memo !== this[i]) {
+                        unique.push(this[i]);
+                        memo = this[i];
+                    }
+                }
+                return unique;
+            };
+            
+            Array.prototype.reject = function(filter) {
+                var remaining = [];
+                for (var i = 0; i < this.length; i++) {
+                    if (!filter(this[i])) {
+                        remaining.push(this[i]);
+                    }
+                }
+                return remaining;
+            };
+                        
+            el = function(id) {
+                return document.getElementById(id);
+            };
+            
+            setAlphabet = function() {
+                var alpha = alphabet();
+                var formatted = ""
+                for (var i = 0; i < ENGLISH_ALPHABET.length; i++) {
+                    if (alpha.contains(ENGLISH_ALPHABET[i])) {
+                        formatted += '<li class="lit">' + ENGLISH_ALPHABET[i] + '</li>'
+                    } else {
+                        formatted += '<li>' + ENGLISH_ALPHABET[i] + '</li>'
+                    }
+                    alpha.remove(ENGLISH_ALPHABET[i]);
+                }
+                for (var i = 0; i < alpha.length; i++) {
+                    formatted += '<li class="lit">' + alpha[i] + '</li>'
+                }
+                
+                el('alphabet').innerHTML = formatted;
+            }
+            
+            alphabet = function() {
+                var chars = {};
+                var _input = input();
+                var alphabet = [];
+                for (var i = 0; i < _input.length; i++) {
+                    chars[_input[i]] = true;
+                }
+                for (c in chars) {
+                    alphabet.push(c);
+                }
+                return alphabet.sort();
+            }
+            
+            setup = function() {
+                updateUI();
+            };
+            
+            input = function() {
+                return (el('intext-input').value || "")
+            }
+            
+            doMarkov = function() {
+                var generation = new Generation(input());
+                el('intext-input').value = generation.normalizedInputText();
+                el("outtext-input").value = generation.normalizedOutputText();
+            };
+            
+            updateUI = function() {
+                setAlphabet();
+            }
+            
+            blank = function(str) {
+                str.match(/\S/) === null;
+            }
+            
+            Generation = function(_inputText) {
+                var me = this;
+                
+                me.rawInput_ = _inputText;
+                me.inputWords_ = _inputText.toLowerCase().split(/[ \n\t,\.;:\!\?"\(\)]+/).reject(blank).sort().uniqSorted();
+                me.existsInInput = function(word) { return me.inputWords_.contains(word) }
+                
+                me.inputWords = function () {
+                    return me.inputWords_;
+                }
+                
+                me.outputWords = function () {
+                    me.outputWords_ = me.outputWords_ || me.getOutputWords()
+                    return me.outputWords_;
+                }
+                
+                me.getOutputWords = function () {
+                    var words, newWords = [], reps = 0;
+                    
+                    while (newWords.length < 30 && reps < 100) {
+                        reps++;
+                        words = me.markovGenerator().generate(100).split(/\s+/);
+                        if (words.length > 1) words = words.slice(0, words.length - 1); //drop the last word, since it's probably incomplete
+                        newWords = newWords.concat(words.reject(me.existsInInput));
+                    }
+                    
+                    return newWords;
+                }
+                
+                me.markovGenerator = function() {
+                    console.log(me.strictness());
+                    return new MarkovGenerator(me.normalizedInputText(), me.strictness());
+                }
+                
+                me.normalizedInputText = function () {
+                    return me.inputWords().join(' ');
+                }
+                
+                me.normalizedOutputText = function () {
+                    return me.outputWords().join(' ');
+                }
+                
+                me.strictness = function () {
+                    var len = me.normalizedInputText().length;
+                    return Math.floor(Math.log(len / 40 + 1) / Math.log(2));
+                }
+                
+                me.alphabet = function() {
+                    var chars = {}, _input = me.normalizedInputText();
+                    var alphabet = [];
+                    for (var i = 0; i < _input.length; i++) {
+                        chars[_input[i]] = true;
+                    }
+                    for (c in chars) {
+                        alphabet.push(c);
+                    }
+                    return alphabet.sort();
+                }
+            }
+            
+            MarkovGenerator = function(_inputText, _strictness) {
+                var me = this;
+                
+                me.input = _inputText;
+                me.output = ""
+                
+                me.strictness = _strictness;
+                
+                me.models = {};
+                
+                me.generate = function(outputLength) {
+                    for (var i = 0; i < outputLength; i++) {
+                        
+                        // choose a degree by flipping coins
+                        var degree = Random.flipCoins(me.strictness);
+                        if (degree > i) degree = i;
+                        
+                        // find or build a Markov model of the text with that degree
+                        var c = null, model, tries = 0;
+                        while (!c) {
+                            tries++;
+                            model = me.getModel(degree);
+                            c = model.pickChar(me.output);
+                            if (degree == 0 && c == me.output[me.output.length-1] && tries < 100) c = null; // special sauce: don't allow repeat characters to be generated by degree-zero models
+                            if (degree > 0) degree -= 1;
+                        }
+                        
+                        me.output += c;
+                    }
+                    return me.output.slice(me.output.length - outputLength, me.output.length);
+                };
+                
+                me.getModel = function(degree) {
+                    var stringDegree = String(degree)
+                    var model = me.models[stringDegree];
+                    if (!model) {
+                        model = new MarkovModel(me.input, degree);
+                        me.models[stringDegree] = model;
+                    }
+                    return model;
+                };
+                
+                
+                return me;
+            };
+            
+            MarkovModel = function(_inputText, _degree) {
+                var me = this;
+                me.degree = _degree
+                me.input = _inputText
+                me.transitions = {}
+                
+                /* transitions gets built as an object like:
+                 *   { "blo": {"o":10,"a":4,"t":1}
+                 *   , "foo": {"t":1,"d":1,"f":2}
+                 *   }
+                 *
+                 */
+                
+                for (var i = 0; i < me.input.length - me.degree; i++) {
+                    prefix = me.input.slice(i, i + me.degree);
+                    next = me.input.slice(i + me.degree, i + me.degree + 1)
+                    me.transitions[prefix] = me.transitions[prefix] || {};
+                    me.transitions[prefix][next] = me.transitions[prefix][next] || 0; // secret sauce: make transitions more equiprobable than they are observed to be
+                    me.transitions[prefix][next] += 1;
+                }
+                
+                me.pickChar = function(previous) {
+                    lastNChars = previous.slice(previous.length - me.degree, previous.length);
+                    
+                    return Random.weightedChoice(me.transitions[lastNChars] || {})
+                }
+                
+                return me;
+            };
+            
+            Random = {
+                weightedChoice: function(obj) {
+                    // obj should map choices to odds of picking that choice.
+                    // if you pass {a: 1, z: 2}, z will get picked twice as often as a.
+                    
+                    var sum = 0; for (key in obj) { sum += obj[key]; }
+                    r = Random.intInRange(1, sum)
+                    
+                    var total = 0; for (key in obj) {
+                        total += obj[key];
+                        if (total >= r) return key;
+                    }
+                },
+                
+                choice: function(ary) {
+                    ary[Random.intInRange(0, ary.length - 1)]
+                },
+                
+                intInRange: function(low, high) {
+                    return Math.floor(Math.random() * (high - low + 1)) + low;
+                },
+                
+                flipCoins: function(numberToFlip) {
+                    var sum = 0; for(var i = 0; i < numberToFlip; i++) {
+                        sum += Random.intInRange(0, 1);
+                    }
+                    return sum;
+                }
+            }
+        </script>
+    </head>
+    
+    <body onload="setup()">
+        <div class="floating-container wide">
+            <div>
+                <textarea id="intext-input" cols="80", rows="16" oninput="updateUI()">A Elbereth! Gilthoniel! Silivren penna miriel o menel aglar elenath; na-chaered palan diriel mi galadhremmin ennorath, Fanuilos, le linnathon nef Aear, si nef Aearon.</textarea>
+            </div>
+            
+            <ol id="alphabet" class="lightup"></ol>
+            <button onclick="doMarkov()">Generate!</button>
+            
+            <div>
+                <textarea id="outtext-input" cols="80", rows="6"></textarea>
+            </div>            
+        </div>
+        
+        <div class="floating-container narrow">
+            <h3>Instructions</h3>
+            <p>In the upper box, enter some words that fit your desired aesthetic. Hit "Generate" to get a bunch of new words in the lower box.</p>
+            <p>At first, you'll mostly get garbage. Pick out the words that look okay and append them to the text in the upper box. As you enter more words, the quality of the output will improve.</p>
+            <p>Make sure your input words represent the entire alphabet you want to use. If your input text doesn't have any "e"s in it, you'll never get any in the output.</p>
+            <p>The input is alphabetized and de-duplicated every time you click "Generate", so you'll have a ready-made wordlist. If your output lacks variety, go through your input and weed out similar-looking words.</p>
+            <h3>Tips</h3>
+            <p>Don't shy away from including very short words in your input. They seem to improve output quality.</p>
+        </div>
+    </body>
+</html>
