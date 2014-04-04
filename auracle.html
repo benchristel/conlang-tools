@@ -34,6 +34,13 @@
         
         <script type="text/javascript">
             var ENGLISH_ALPHABET = "abcdefghijklmnopqrstuvwxyz".split('');
+            var defaultIngredients =
+            { '': ''
+            , quenya:   "ai airetari aldaron an andune ar avanier caita calaciryo eleni elentari elye enquantuva falmalinnar fanyar hiruvalye hisie i ilye imbe inye la lantar lassi laurie linte lirinen lisse lu luini lumbule man maryat met mi miri miruvoreva mornie na nai namarie nin nu oiale oiolosseo omaryo oromardi ortane pella ramar romello si sila sindanoriello surinen tellumar tier tintalle tintilar undulave unotime untupa valimar vanwa varda vardo ve yassen yeni yuldar yulma"
+            , sindarin: "a aear aearon aglar amon aran arwen celebrimbor cirith diriel durin echant elbereth elenath elrond emyn ennorath ennyn eregion fanuilos galadhremmin gilthoniel hain hen hin i im le linnathon mellon menel mi minno miriel moria muil na-chaered narvi nef o palan pedo penna si silivren teithant thiw ungol"
+            , scifi:    "anakin barada barallen dakta dar darth endor han hutt idmah jabba jeddak jedi kenobi kerbin klaatu klaigan leia midyen na naboo nikto obi solo tatooine vader wan yavin yenmai yoda"
+            , _default: "grumpy wizards brew toxins for jack and the evil queen"
+            }
             
             Array.prototype.remove = function(value) {
                 var idx = this.indexOf(value);
@@ -121,8 +128,23 @@
                 return (el('intext-input').value || "")
             }
             
+            selectIngredient = function(id, elem) {
+                el('ingredient-input-' + id).value = defaultIngredients[elem.value];
+            }
+            
+            ingredients = function() {
+                var mix, text, ingred = [];
+                for(var i = 1; i <= 3; i++) {
+                    mix = Math.pow(Number(el('ingredient-mix-' + i).value) / 100.0, 2);
+                    text = el('ingredient-input-' + i).value;
+                    ingred.push({text: text, strength: mix});
+                }
+                ingred.push({text: defaultIngredients._default, strength: 0.001})
+                return ingred;
+            }
+            
             doMarkov = function() {
-                var generation = new Generation(input());
+                var generation = new Generation(input(), ingredients());
                 el('intext-input').value = generation.normalizedInputText();
                 el("outtext-input").value = generation.normalizedOutputText();
             };
@@ -135,21 +157,24 @@
                 str.match(/\S/) === null;
             }
             
-            Generation = function(_inputText) {
+            Generation = function(_inputText, _background) {
                 var me = this;
                 
                 me.rawInput_ = _inputText;
                 me.inputWords_ = _inputText.toLowerCase().split(/[ \n\t,\.;:\!\?"\(\)]+/).reject(blank).sort().uniqSorted();
+                me.background_ = _background || [];
                 me.existsInInput = function(word) { return me.inputWords_.contains(word) }
                 
                 me.inputWords = function () {
                     return me.inputWords_;
-                }
+                };
+                
+                me.background = function () { return me.background_; };
                 
                 me.outputWords = function () {
                     me.outputWords_ = me.outputWords_ || me.getOutputWords()
                     return me.outputWords_;
-                }
+                };
                 
                 me.getOutputWords = function () {
                     var words, newWords = [], reps = 0;
@@ -162,25 +187,28 @@
                     }
                     
                     return newWords;
-                }
+                };
                 
                 me.markovGenerator = function() {
-                    console.log(me.strictness());
-                    return new MarkovGenerator(me.normalizedInputText(), me.strictness());
-                }
+                    me.markovGenerator_ = me.markovGenerator_ || new MarkovGenerator(me.normalizedInputText(), me.strictness(), me.background());
+                    return me.markovGenerator_;
+                };
                 
                 me.normalizedInputText = function () {
                     return me.inputWords().join(' ');
-                }
+                };
                 
                 me.normalizedOutputText = function () {
                     return me.outputWords().join(' ');
-                }
+                };
                 
                 me.strictness = function () {
                     var len = me.normalizedInputText().length;
-                    return Math.floor(Math.log(len / 40 + 1) / Math.log(2));
-                }
+                    for (var i = 0; i < me.background().length; i++) {
+                        len += me.background()[i].text.length * me.background()[i].strength
+                    }
+                    return Math.floor(Math.log(len / 40 + 1) / Math.log(2)) + 1;
+                };
                 
                 me.alphabet = function() {
                     var chars = {}, _input = me.normalizedInputText();
@@ -192,10 +220,10 @@
                         alphabet.push(c);
                     }
                     return alphabet.sort();
-                }
-            }
+                };
+            };
             
-            MarkovGenerator = function(_inputText, _strictness) {
+            MarkovGenerator = function(_inputText, _strictness, _backgroundData) {
                 var me = this;
                 
                 me.input = _inputText;
@@ -205,12 +233,20 @@
                 
                 me.models = {};
                 
+                me.backgroundData = _backgroundData ||
+                [   { text: "to be or not that is the question whether 'tis nobler in mind suffer slings and arrows of outrageous fortune or take up arms against a sea troubles by opposing end them die sleep no more we say heartache thousand natural shocks flesh heir perchance dream ay there's rub death who knows what may come when shuffled off mortal coil"
+                    , strength: 0.007
+                    }
+                ];
+                
                 me.generate = function(outputLength) {
                     for (var i = 0; i < outputLength; i++) {
                         
                         // choose a degree by flipping coins
                         var degree = Random.flipCoins(me.strictness);
                         if (degree > i) degree = i;
+                        if (me.output[me.output.length - 1] == ' ' && degree > 0) degree -= 1; // special sauce: make words more independent (really, this function should return an array of words, not a string).
+                                                                          // if you don't do this, you'll end up with a lot of words that start with the same letter.
                         
                         // find or build a Markov model of the text with that degree
                         var c = null, model, tries = 0;
@@ -231,41 +267,67 @@
                     var stringDegree = String(degree)
                     var model = me.models[stringDegree];
                     if (!model) {
-                        model = new MarkovModel(me.input, degree);
+                        model = new MarkovModel(degree);
+                        me.trainModel(model);
+                        console.log("generated new model with degree " + degree)
+                        console.log(model);
                         me.models[stringDegree] = model;
                     }
                     return model;
                 };
                 
+                me.trainModel = function(model) {
+                    // train the model on some background data with high smoothing and low learning strength
+                    model.setSmoothing(0.5);
+                    for (var i = 0; i < me.backgroundData.length; i++) {
+                        datum = me.backgroundData[i];
+                        model.setLearningStrength(datum.strength);
+                        if (datum.strength > 0) model.study(datum.text);
+                    }
+                    // train on the input data for this generation
+                    model.setSmoothing(0.0);
+                    model.setLearningStrength(1.0);
+                    model.study(me.input);
+                }
+                
                 
                 return me;
             };
             
-            MarkovModel = function(_inputText, _degree) {
+            MarkovModel = function(_degree, _initialTransitions) {
                 var me = this;
-                me.degree = _degree
-                me.input = _inputText
-                me.transitions = {}
+                me.degree      = _degree;
+                me.transitions = _initialTransitions || {};
+                me.learningStrength = 1.0;
+                me.smoothing = 0.0;
                 
                 /* transitions gets built as an object like:
                  *   { "blo": {"o":10,"a":4,"t":1}
                  *   , "foo": {"t":1,"d":1,"f":2}
                  *   }
-                 *
                  */
-                
-                for (var i = 0; i < me.input.length - me.degree; i++) {
-                    prefix = me.input.slice(i, i + me.degree);
-                    next = me.input.slice(i + me.degree, i + me.degree + 1)
-                    me.transitions[prefix] = me.transitions[prefix] || {};
-                    me.transitions[prefix][next] = me.transitions[prefix][next] || 0; // secret sauce: make transitions more equiprobable than they are observed to be
-                    me.transitions[prefix][next] += 1;
-                }
                 
                 me.pickChar = function(previous) {
                     lastNChars = previous.slice(previous.length - me.degree, previous.length);
-                    
                     return Random.weightedChoice(me.transitions[lastNChars] || {})
+                }
+                
+                me.study = function(text) {
+                    for (var i = 0; i < text.length - me.degree; i++) {
+                        prefix = text.slice(i, i + me.degree);
+                        next = text.slice(i + me.degree, i + me.degree + 1)
+                        me.transitions[prefix] = me.transitions[prefix] || {};
+                        me.transitions[prefix][next] = me.transitions[prefix][next] || me.smoothing * me.learningStrength; // secret sauce: make transitions more equiprobable than they are observed to be
+                        me.transitions[prefix][next] += me.learningStrength;
+                    }
+                }
+                
+                me.setLearningStrength = function(_learningStrength) {
+                    me.learningStrength = _learningStrength;
+                }
+                
+                me.setSmoothing = function(_smoothing) {
+                    me.smoothing = _smoothing;
                 }
                 
                 return me;
@@ -277,7 +339,7 @@
                     // if you pass {a: 1, z: 2}, z will get picked twice as often as a.
                     
                     var sum = 0; for (key in obj) { sum += obj[key]; }
-                    r = Random.intInRange(1, sum)
+                    r = Random.floatInRange(0, sum);
                     
                     var total = 0; for (key in obj) {
                         total += obj[key];
@@ -291,6 +353,10 @@
                 
                 intInRange: function(low, high) {
                     return Math.floor(Math.random() * (high - low + 1)) + low;
+                },
+                
+                floatInRange: function(low, high) {
+                    return Math.random() * (high - low) + low;
                 },
                 
                 flipCoins: function(numberToFlip) {
@@ -310,7 +376,7 @@
             </div>
             
             <ol id="alphabet" class="lightup"></ol>
-            <button onclick="doMarkov()">Generate!</button>
+            <button onmouseup="doMarkov()">Generate!</button>
             
             <div>
                 <textarea id="outtext-input" cols="80" rows="6"></textarea>
@@ -324,7 +390,35 @@
             <p>Make sure your input words represent the entire alphabet you want to use. If your input text doesn't have any "e"s in it, you'll never get any in the output.</p>
             <p>The input is alphabetized and de-duplicated every time you click "Generate", so you'll have a ready-made wordlist. If your output lacks variety, go through your input and weed out similar-looking words.</p>
             <h3>Tips</h3>
+            <p>It's possible to train a good generator just by copy-pasting good output words back into the input. However, you'll get better results faster if you use the output words just as inspiration for what you type into the input.</p>
             <p>Don't shy away from including very short words in your input. They seem to improve output quality.</p>
+        </div>
+        
+        <div class="floating-container narrow">
+            <h3>Ingredients</h3>
+            <ul>
+                <li><input type="range" min="1" max="100" id="ingredient-mix-1"></input>
+                    <select onchange="selectIngredient(1, this)">
+                    <option value=""></option>
+                    <option value="quenya">Quenya</option>
+                    <option value="sindarin">Sindarin</option>
+                    <option value="scifi">Pulp Sci Fi</option>
+                </select><input type="text" id="ingredient-input-1" style="width:300px"></input></li>
+                <li><input type="range" min="1" max="100" id="ingredient-mix-2"></input>
+                    <select onchange="selectIngredient(2, this)">
+                    <option value=""></option>
+                    <option value="quenya">Quenya</option>
+                    <option value="sindarin">Sindarin</option>
+                    <option value="scifi">Pulp Sci Fi</option>
+                </select><input type="text" id="ingredient-input-2" style="width:300px"></input></li>
+                <li><input type="range" min="1" max="100" id="ingredient-mix-3"></input>
+                    <select onchange="selectIngredient(3, this)">
+                    <option value=""></option>
+                    <option value="quenya">Quenya</option>
+                    <option value="sindarin">Sindarin</option>
+                    <option value="scifi">Pulp Sci Fi</option>
+                </select><input type="text" id="ingredient-input-3" style="width:300px"></input></li>
+            </ul>
         </div>
     </body>
 </html>
