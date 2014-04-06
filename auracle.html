@@ -31,93 +31,38 @@
                 width: 600px;
             }
         </style>
+        <script type="text/javascript" src="http://code.jquery.com/jquery-2.1.0.min.js"></script>
+        <script type="text/javascript" src="http://underscorejs.org/underscore-min.js"></script>
         
         <script type="text/javascript">
+            _.mixin({sum:function(ary){var i=s=0;for(;i<ary.length;i++){s+=ary[i];}return s}});
+            
             var ENGLISH_ALPHABET = "abcdefghijklmnopqrstuvwxyz".split('');
             var defaultIngredients =
             { '': ''
             , quenya:   "ai airetari aldaron an andune ar avanier caita calaciryo eleni elentari elye enquantuva falmalinnar fanyar hiruvalye hisie i ilye imbe inye la lantar lassi laurie linte lirinen lisse lu luini lumbule man maryat met mi miri miruvoreva mornie na nai namarie nin nu oiale oiolosseo omaryo oromardi ortane pella ramar romello si sila sindanoriello surinen tellumar tier tintalle tintilar undulave unotime untupa valimar vanwa varda vardo ve yassen yeni yuldar yulma"
             , sindarin: "a aear aearon aglar amon aran arwen celebrimbor cirith diriel durin echant elbereth elenath elrond emyn ennorath ennyn eregion fanuilos galadhremmin gilthoniel hain hen hin i im le linnathon mellon menel mi minno miriel moria muil na-chaered narvi nef o palan pedo penna si silivren teithant thiw ungol"
             , scifi:    "anakin barada barallen dakta dar darth endor han hutt idmah jabba jeddak jedi kenobi kerbin klaatu klaigan leia midyen na naboo nikto obi solo tatooine vader wan yavin yenmai yoda"
-            , _default: "grumpy wizards brew toxins for jack and the evil queen"
+            , _default: "grumpy wizards brew toxins for jack and the evil queen it is likely that pikachu entered my house on friday evening"
             }
-            
-            Array.prototype.remove = function(value) {
-                var idx = this.indexOf(value);
-                if (idx != -1) {
-                    return this.splice(idx, 1); // The second parameter is the number of elements to remove.
-                }
-                return false;
-            }
-            
-            Array.prototype.contains = function(value) {
-                return this.indexOf(value) > -1;
-            }
-            
-            Array.prototype.unique = function() {
-                var unique = [];
-                for (var i = 0; i < this.length; i++) {
-                    if (unique.indexOf(this[i]) == -1) {
-                        unique.push(this[i]);
-                    }
-                }
-                return unique;
-            };
-            
-            Array.prototype.uniqSorted = function() {
-                var memo, unique = [];
-                for (var i = 0; i < this.length; i++) {
-                    if (memo !== this[i]) {
-                        unique.push(this[i]);
-                        memo = this[i];
-                    }
-                }
-                return unique;
-            };
-            
-            Array.prototype.reject = function(filter) {
-                var remaining = [];
-                for (var i = 0; i < this.length; i++) {
-                    if (!filter(this[i])) {
-                        remaining.push(this[i]);
-                    }
-                }
-                return remaining;
-            };
-                        
-            el = function(id) {
-                return document.getElementById(id);
-            };
             
             setAlphabet = function() {
-                var alpha = alphabet();
-                var formatted = ""
-                for (var i = 0; i < ENGLISH_ALPHABET.length; i++) {
-                    if (alpha.contains(ENGLISH_ALPHABET[i])) {
-                        formatted += '<li class="lit">' + ENGLISH_ALPHABET[i] + '</li>'
-                    } else {
-                        formatted += '<li>' + ENGLISH_ALPHABET[i] + '</li>'
-                    }
-                    alpha.remove(ENGLISH_ALPHABET[i]);
-                }
-                for (var i = 0; i < alpha.length; i++) {
-                    formatted += '<li class="lit">' + alpha[i] + '</li>'
+                var _alpha = _.chain(alphabet()), formatted = "";
+                var appendToHtml = function(ch, lit) {
+                    formatted += '<li' + (lit ? ' class="lit">' : '>') + ch + '</li>'
                 }
                 
-                el('alphabet').innerHTML = formatted;
+                _(ENGLISH_ALPHABET).each(function(ch) {
+                    appendToHtml(ch, _alpha.contains(ch).value());
+                })
+                
+                _alpha.difference(ENGLISH_ALPHABET).each(function(ch){appendToHtml(ch, true)});                
+                $('#alphabet').html(formatted);
             }
             
             alphabet = function() {
-                var chars = {};
-                var _input = input();
-                var alphabet = [];
-                for (var i = 0; i < _input.length; i++) {
-                    chars[_input[i]] = true;
-                }
-                for (c in chars) {
-                    alphabet.push(c);
-                }
-                return alphabet.sort();
+                var a = _(input().split('')).uniq().sort();
+                return a;
             }
             
             setup = function() {
@@ -125,18 +70,18 @@
             };
             
             input = function() {
-                return (el('intext-input').value || "")
+                return ($('#intext-input').val() || "")
             }
             
             selectIngredient = function(id, elem) {
-                el('ingredient-input-' + id).value = defaultIngredients[elem.value];
+                $('#ingredient-input-' + id).val(defaultIngredients[$(elem).val()]);
             }
             
             ingredients = function() {
                 var mix, text, ingred = [];
                 for(var i = 1; i <= 3; i++) {
-                    mix = Math.pow(Number(el('ingredient-mix-' + i).value) / 100.0, 2);
-                    text = el('ingredient-input-' + i).value;
+                    mix = Math.pow(Number($('#ingredient-mix-' + i).val()) / 100.0, 2);
+                    text = $('#ingredient-input-' + i).val();
                     ingred.push({text: text, strength: mix});
                 }
                 ingred.push({text: defaultIngredients._default, strength: 0.001})
@@ -145,8 +90,8 @@
             
             doMarkov = function() {
                 var generation = new Generation(input(), ingredients());
-                el('intext-input').value = generation.normalizedInputText();
-                el("outtext-input").value = generation.normalizedOutputText();
+                $('#intext-input').val(generation.normalizedInputText());
+                $("#outtext-input").val(generation.normalizedOutputText());
             };
             
             updateUI = function() {
@@ -161,9 +106,14 @@
                 var me = this;
                 
                 me.rawInput_ = _inputText;
-                me.inputWords_ = _inputText.toLowerCase().split(/[ \n\t,\.;:\!\?"\(\)]+/).reject(blank).sort().uniqSorted();
+                me.inputWords_ = _.chain(_inputText.toLowerCase()
+                        .split(/[ \n\t,\.;:\!\?"\(\)]+/))
+                        .reject(blank)
+                        .sort()
+                        .uniq(true)
+                        .value();
                 me.background_ = _background || [];
-                me.existsInInput = function(word) { return me.inputWords_.contains(word) }
+                me.existsInInput = function(word) { return _(me.inputWords_).contains(word) }
                 
                 me.inputWords = function () {
                     return me.inputWords_;
@@ -183,7 +133,7 @@
                         reps++;
                         words = me.markovGenerator().generate(100).split(/\s+/);
                         if (words.length > 1) words = words.slice(0, words.length - 1); //drop the last word, since it's probably incomplete
-                        newWords = newWords.concat(words.reject(me.existsInInput));
+                        newWords = newWords.concat(_(words).reject(me.existsInInput));
                     }
                     
                     return newWords;
@@ -204,22 +154,14 @@
                 
                 me.strictness = function () {
                     var len = me.normalizedInputText().length;
-                    for (var i = 0; i < me.background().length; i++) {
-                        len += me.background()[i].text.length * me.background()[i].strength
-                    }
+                    _(me.background()).each(function(i) {
+                        len += i.text.length * i.strength
+                    });
                     return Math.floor(Math.log(len / 40 + 1) / Math.log(2)) + 1;
                 };
                 
                 me.alphabet = function() {
-                    var chars = {}, _input = me.normalizedInputText();
-                    var alphabet = [];
-                    for (var i = 0; i < _input.length; i++) {
-                        chars[_input[i]] = true;
-                    }
-                    for (c in chars) {
-                        alphabet.push(c);
-                    }
-                    return alphabet.sort();
+                    return _(me.normalizedInputText().split('')).uniq().sort();
                 };
             };
             
@@ -233,11 +175,7 @@
                 
                 me.models = {};
                 
-                me.backgroundData = _backgroundData ||
-                [   { text: "to be or not that is the question whether 'tis nobler in mind suffer slings and arrows of outrageous fortune or take up arms against a sea troubles by opposing end them die sleep no more we say heartache thousand natural shocks flesh heir perchance dream ay there's rub death who knows what may come when shuffled off mortal coil"
-                    , strength: 0.007
-                    }
-                ];
+                me.backgroundData = _backgroundData || [];
                 
                 me.generate = function(outputLength) {
                     for (var i = 0; i < outputLength; i++) {
@@ -250,7 +188,7 @@
                         
                         // find or build a Markov model of the text with that degree
                         var c = null, model, tries = 0;
-                        while (!c) {
+                        while (!c && tries < 100) {
                             tries++;
                             model = me.getModel(degree);
                             c = model.pickChar(me.output);
@@ -269,8 +207,6 @@
                     if (!model) {
                         model = new MarkovModel(degree);
                         me.trainModel(model);
-                        console.log("generated new model with degree " + degree)
-                        console.log(model);
                         me.models[stringDegree] = model;
                     }
                     return model;
@@ -279,18 +215,15 @@
                 me.trainModel = function(model) {
                     // train the model on some background data with high smoothing and low learning strength
                     model.setSmoothing(0.5);
-                    for (var i = 0; i < me.backgroundData.length; i++) {
-                        datum = me.backgroundData[i];
+                    _(me.backgroundData).each(function(datum) {
                         model.setLearningStrength(datum.strength);
                         if (datum.strength > 0) model.study(datum.text);
-                    }
+                    });
                     // train on the input data for this generation
                     model.setSmoothing(0.0);
                     model.setLearningStrength(1.0);
                     model.study(me.input);
-                }
-                
-                
+                };
                 return me;
             };
             
@@ -334,16 +267,17 @@
             };
             
             Random = {
-                weightedChoice: function(obj) {
-                    // obj should map choices to odds of picking that choice.
+                weightedChoice: function(odds) {
+                    // `odds` should map choices to odds of picking that choice.
                     // if you pass {a: 1, z: 2}, z will get picked twice as often as a.
                     
-                    var sum = 0; for (key in obj) { sum += obj[key]; }
-                    r = Random.floatInRange(0, sum);
+                    //var sum = 0; for (key in odds) { sum += odds[key]; }
+                    var sum = _.chain(odds).values().sum().value();
+                    threshold = Random.floatInRange(0, sum);
                     
-                    var total = 0; for (key in obj) {
-                        total += obj[key];
-                        if (total >= r) return key;
+                    var total = 0; for (key in odds) {
+                        total += odds[key];
+                        if (total >= threshold) return key;
                     }
                 },
                 
@@ -360,9 +294,10 @@
                 },
                 
                 flipCoins: function(numberToFlip) {
-                    var sum = 0; for(var i = 0; i < numberToFlip; i++) {
+                    var sum = 0;
+                    _(numberToFlip).times(function() {
                         sum += Random.intInRange(0, 1);
-                    }
+                    });
                     return sum;
                 }
             }
