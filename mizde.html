@@ -1,0 +1,102 @@
+<html>
+    <head>
+        <script type="text/javascript">
+        "use strict"
+
+        var main = function() {
+            var input = document.getElementById('input')
+            var output = document.getElementById('output')
+            var runButton = document.getElementById('run')
+
+            runButton.addEventListener('click', function() {
+                run(input, output)
+            })
+        }
+
+        var run = function(input) {
+            console.log('running')
+
+            var inputWords = input.value.split(/\s+/)
+            var model = Model.buildFrom(inputWords)
+
+            var outputWords = []
+            var toGenerate = 20
+            while (toGenerate-- > 0) {
+                outputWords.push(model.generate())
+            }
+
+            output.innerText = outputWords.join(" ")
+        }
+
+        var Model = {}
+        Model.buildFrom = function(words) {
+            var TRIGRAM_LENGTH = 3
+
+            var model = {}
+            var trigrams = map(function(w) { return w.slice(0, 3) }, words)
+
+            model.generate = function() {
+                var length = 5
+                var letters = []
+                while (length-- > 0) {
+                    letters.push(null)
+                }
+
+                while (letters.indexOf(null) !== -1) {
+                    spraypaint(letters)
+                }
+
+                return letters.join("")
+            }
+
+            var spraypaint = function(buffer) {
+                var index = randomOffsetProducingOverlapBetweenPolymersWithLengths(buffer.length, TRIGRAM_LENGTH)
+                var trigram = chooseRandomTrigram()
+                paste(trigram, buffer, index)
+            }
+
+            var paste = function(src, dest, start) {
+                var readHead = 0
+                var writeHead = start
+                while (readHead < src.length && writeHead < dest.length) {
+                    dest[writeHead++] = src[readHead++]
+                }
+            }
+
+            var randomOffsetProducingOverlapBetweenPolymersWithLengths = function(l1, l2) {
+                return randomInt(l1 + l2 - 1) - (l2 - 1)
+            }
+
+            var chooseRandomTrigram = function() {
+                var r = randomInt(trigrams.length)
+                return trigrams[r]
+                if (r === 0) {
+                    return ['a', 'a', 'a']
+                } else {
+                    return ['ch', 'ch', 'ch']
+                }
+            }
+
+            return model
+        }
+
+        var randomInt = function(numberOfChoices) {
+            return Math.floor(Math.random() * numberOfChoices)
+        }
+
+        var map = function(f, xs) {
+            var result = new Array(xs.length)
+            for (var i = 0; i < xs.length; i++) {
+                result[i] = f(xs[i])
+            }
+
+            return result
+        }
+        </script>
+    </head>
+    <body onload="main()">
+        <textarea id="input"></textarea>
+        <button id="run">Run</button>
+        <p id="output"></p>
+    </body>
+</html>
